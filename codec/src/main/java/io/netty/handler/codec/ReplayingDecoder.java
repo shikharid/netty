@@ -82,7 +82,7 @@ import java.util.List;
  * {@link Error} will be raised and the control will be returned to
  * {@link ReplayingDecoder}.  If {@link ReplayingDecoder} catches the
  * {@link Error}, then it will rewind the {@code readerIndex} of the buffer
- * back to the 'initial' position (i.e. the beginning of the buffer) and call
+ * back to the 'initial' position (i.e. the     beginning of the buffer) and call
  * the {@code decode(..)} method again when more data is received into the
  * buffer.
  * <p>

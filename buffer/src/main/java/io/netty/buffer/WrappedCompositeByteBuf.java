@@ -648,8 +648,8 @@ class WrappedCompositeByteBuf extends CompositeByteBuf {
     }
 
     @Override
-    public final int maxNumComponents() {
-        return wrapped.maxNumComponents();
+    public final Consolidator consolidator() {
+        return wrapped.consolidator();
     }
 
     @Override

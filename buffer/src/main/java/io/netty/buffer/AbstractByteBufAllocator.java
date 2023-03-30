@@ -16,13 +16,14 @@
 
 package io.netty.buffer;
 
-import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
-
+import io.netty.buffer.CompositeByteBuf.Consolidators;
 import io.netty.util.ResourceLeakDetector;
 import io.netty.util.ResourceLeakTracker;
 import io.netty.util.internal.MathUtil;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.StringUtil;
+
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 /**
  * Skeletal {@link ByteBufAllocator} implementation to extend.
@@ -211,7 +212,7 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
 
     @Override
     public CompositeByteBuf compositeHeapBuffer(int maxNumComponents) {
-        return toLeakAwareBuffer(new CompositeByteBuf(this, false, maxNumComponents));
+        return toLeakAwareBuffer(new CompositeByteBuf(this, false, Consolidators.def()));
     }
 
     @Override
@@ -221,7 +222,7 @@ public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
 
     @Override
     public CompositeByteBuf compositeDirectBuffer(int maxNumComponents) {
-        return toLeakAwareBuffer(new CompositeByteBuf(this, true, maxNumComponents));
+        return toLeakAwareBuffer(new CompositeByteBuf(this, true, Consolidators.def()));
     }
 
     private static void validate(int initialCapacity, int maxCapacity) {

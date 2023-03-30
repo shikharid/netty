@@ -53,38 +53,33 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
 
     private final ByteBufAllocator alloc;
     private final boolean direct;
-    private final int maxNumComponents;
+    private final Consolidator consolidator;
 
     private int componentCount;
     private Component[] components; // resized when needed
 
     private boolean freed;
 
-    private CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents, int initSize) {
+    private CompositeByteBuf(ByteBufAllocator alloc, boolean direct, Consolidator consolidator, int initSize) {
         super(AbstractByteBufAllocator.DEFAULT_MAX_CAPACITY);
 
         this.alloc = ObjectUtil.checkNotNull(alloc, "alloc");
-        if (maxNumComponents < 1) {
-            throw new IllegalArgumentException(
-                    "maxNumComponents: " + maxNumComponents + " (expected: >= 1)");
-        }
-
+        this.consolidator = consolidator;
         this.direct = direct;
-        this.maxNumComponents = maxNumComponents;
-        components = newCompArray(initSize, maxNumComponents);
+        components = newCompArray(initSize, consolidator);
     }
 
-    public CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents) {
-        this(alloc, direct, maxNumComponents, 0);
+    public CompositeByteBuf(ByteBufAllocator alloc, boolean direct, Consolidator consolidator) {
+        this(alloc, direct, consolidator, 0);
     }
 
-    public CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents, ByteBuf... buffers) {
-        this(alloc, direct, maxNumComponents, buffers, 0);
+    public CompositeByteBuf(ByteBufAllocator alloc, boolean direct, Consolidator consolidator, ByteBuf... buffers) {
+        this(alloc, direct, consolidator, buffers, 0);
     }
 
-    CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents,
+    CompositeByteBuf(ByteBufAllocator alloc, boolean direct, Consolidator consolidator,
             ByteBuf[] buffers, int offset) {
-        this(alloc, direct, maxNumComponents, buffers.length - offset);
+        this(alloc, direct, consolidator, buffers.length - offset);
 
         addComponents0(false, 0, buffers, offset);
         consolidateIfNeeded();
@@ -92,8 +87,8 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
     }
 
     public CompositeByteBuf(
-            ByteBufAllocator alloc, boolean direct, int maxNumComponents, Iterable<ByteBuf> buffers) {
-        this(alloc, direct, maxNumComponents,
+            ByteBufAllocator alloc, boolean direct, Consolidator consolidator, Iterable<ByteBuf> buffers) {
+        this(alloc, direct, consolidator,
                 buffers instanceof Collection ? ((Collection<ByteBuf>) buffers).size() : 0);
 
         addComponents(false, 0, buffers);
@@ -128,17 +123,23 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
         }
     };
 
-    <T> CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents,
+    <T> CompositeByteBuf(ByteBufAllocator alloc, boolean direct, Consolidator consolidator,
             ByteWrapper<T> wrapper, T[] buffers, int offset) {
-        this(alloc, direct, maxNumComponents, buffers.length - offset);
+        this(alloc, direct, consolidator, buffers.length - offset);
 
         addComponents0(false, 0, wrapper, buffers, offset);
         consolidateIfNeeded();
         setIndex(0, capacity());
     }
 
-    private static Component[] newCompArray(int initComponents, int maxNumComponents) {
-        int capacityGuess = Math.min(AbstractByteBufAllocator.DEFAULT_MAX_COMPONENTS, maxNumComponents);
+    private static Component[] newCompArray(int initComponents, Consolidator consolidator) {
+        final int capacityGuess;
+        if (consolidator instanceof ComponentCountBasedConsolidator) {
+            capacityGuess = Math.min(AbstractByteBufAllocator.DEFAULT_MAX_COMPONENTS,
+                ((ComponentCountBasedConsolidator) consolidator).threshold);
+        } else {
+            capacityGuess = AbstractByteBufAllocator.DEFAULT_MAX_COMPONENTS;
+        }
         return new Component[Math.max(initComponents, capacityGuess)];
     }
 
@@ -147,7 +148,7 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
         super(Integer.MAX_VALUE);
         this.alloc = alloc;
         direct = false;
-        maxNumComponents = 0;
+        consolidator = null;
         components = null;
     }
 
@@ -564,11 +565,8 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
      * array of components and so affect the index etc.
      */
     private void consolidateIfNeeded() {
-        // Consolidate if the number of components will exceed the allowed maximum by the current
-        // operation.
-        int size = componentCount;
-        if (size > maxNumComponents) {
-            consolidate0(0, size);
+        if (consolidator.consolidationNeeded(this)) {
+            consolidate0(0, componentCount);
         }
     }
 
@@ -849,11 +847,9 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
             final int paddingLength = newCapacity - oldCapacity;
             ByteBuf padding = allocBuffer(paddingLength).setIndex(0, paddingLength);
             addComponent0(false, size, padding);
-            if (componentCount >= maxNumComponents) {
-                // FIXME: No need to create a padding buffer and consolidate.
-                // Just create a big single buffer and put the current content there.
-                consolidateIfNeeded();
-            }
+            // FIXME: No need to create a padding buffer and consolidate.
+            // Just create a big single buffer and put the current content there if consolidation needed.
+            consolidateIfNeeded();
         } else if (newCapacity < oldCapacity) {
             lastAccessed = null;
             int i = size - 1;
@@ -903,10 +899,10 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
     }
 
     /**
-     * Return the max number of {@link ByteBuf}'s that are composed in this instance
+     * Return the consolidator used for this instance
      */
-    public int maxNumComponents() {
-        return maxNumComponents;
+    public Consolidator consolidator() {
+        return consolidator;
     }
 
     /**
@@ -2359,5 +2355,73 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
             System.arraycopy(components, i, components, i + count, size - i);
         }
         componentCount = newSize;
+    }
+
+    public static class NoopConsolidator implements Consolidator {
+
+        @Override
+        public boolean consolidationNeeded(CompositeByteBuf buf) {
+            return false;
+        }
+    }
+
+    public static class ComponentCountBasedConsolidator implements Consolidator {
+
+        private final int threshold;
+
+        public ComponentCountBasedConsolidator(int threshold) {
+            this.threshold = threshold;
+        }
+
+        @Override
+        public boolean consolidationNeeded(CompositeByteBuf buf) {
+            // Consolidate if the number of components will exceed the allowed maximum
+            return buf.componentCount > threshold;
+        }
+    }
+
+    public static class ByteCountBasedConsolidator implements Consolidator {
+
+        private final int threshold;
+
+        public ByteCountBasedConsolidator(int threshold) {
+            this.threshold = threshold;
+        }
+
+        @Override
+        public boolean consolidationNeeded(CompositeByteBuf buf) {
+            // Consolidate if the number of readableBytes in the ByteBuf will exceed the allowed maximum
+            final int size = buf.componentCount;
+            final int readableBytes = buf.components[size - 1].endOffset;
+            return readableBytes > threshold;
+        }
+    }
+
+    public interface Consolidator {
+        boolean consolidationNeeded(CompositeByteBuf buf);
+    }
+
+    public static final class Consolidators {
+
+        private static final int DEFAULT_MAX_COMPONENTS = 16;
+
+        private static final Consolidator noopConsolidator = new NoopConsolidator();
+        private static final Consolidator defaultConsolidator = new ComponentCountBasedConsolidator(DEFAULT_MAX_COMPONENTS);
+
+        public static Consolidator noop() {
+            return noopConsolidator;
+        }
+
+        public static Consolidator def() {
+            return defaultConsolidator;
+        }
+
+        public static Consolidator componentCountBased(int threshold) {
+            return new ComponentCountBasedConsolidator(threshold);
+        }
+
+        public static Consolidator byteCountBased(int threshold) {
+            return new ByteCountBasedConsolidator(threshold);
+        }
     }
 }
