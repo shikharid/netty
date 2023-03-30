@@ -1600,7 +1600,7 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
         Component la = lastAccessed;
         if (la != null && offset >= la.offset && offset < la.endOffset) {
            return la;
-        }
+        } // could do a fast path check here with the next component before doing the binary search?
         return findIt(offset);
     }
 
