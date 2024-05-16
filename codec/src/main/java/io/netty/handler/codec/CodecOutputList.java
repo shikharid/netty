@@ -62,8 +62,8 @@ final class CodecOutputList extends AbstractList<Object> implements RandomAccess
                 elements[i] = new CodecOutputList(this, 16);
             }
             count = elements.length;
-            currentIdx = elements.length;
-            mask = elements.length - 1;
+            currentIdx = elements.length; // represents till what idx lists are available, -1 when taken, +1 when given back to it
+            mask = elements.length - 1; // uses & to calculate modulo, as array is double in size every time from 2 so power of 2
         }
 
         public CodecOutputList getOrCreate() {

@@ -96,7 +96,7 @@ public class RecyclerBenchmark extends AbstractMicrobenchmark {
     public void producer(ProducerConsumerState state, Control control) throws Exception {
         Queue<DummyObject> queue = state.queue;
         DummyObject object = state.recycler.get();
-        while (!control.stopMeasurement) {
+        while (!control.stopMeasurement) {̄
             if (queue.offer(object)) {
                 break;
             }

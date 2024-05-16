@@ -130,6 +130,8 @@ public class HttpClientCodecTest {
         Bootstrap cb = new Bootstrap();
         final CountDownLatch serverChannelLatch = new CountDownLatch(1);
         final CountDownLatch responseReceivedLatch = new CountDownLatch(1);
+        FullHttpResponse s;
+        s.content()
         try {
             sb.group(new NioEventLoopGroup(2));
             sb.channel(NioServerSocketChannel.class);

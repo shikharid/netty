@@ -295,6 +295,8 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             } finally {
                 try {
                     if (cumulation != null && !cumulation.isReadable()) {
+                        // This implies everything was read from this cumulation by impl decoder
+                        // So release this ByteBuf, reset read count
                         numReads = 0;
                         try {
                             cumulation.release();
@@ -306,7 +308,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                                             "which is not allowed.", e);
                         }
                         cumulation = null;
-                    } else if (++numReads >= discardAfterReads) {
+                    } else if (++numReads >= discardAfterReads) { // Something was read, see if we are holding the cumulation for too long, bytes might be freed by calling discard
                         // We did enough reads already try to discard some bytes, so we not risk to see a OOME.
                         // See https://github.com/netty/netty/issues/4275
                         numReads = 0;
@@ -314,9 +316,10 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     }
 
                     int size = out.size();
-                    firedChannelRead |= out.insertSinceRecycled();
+                    firedChannelRead |= out.insertSinceRecycled(); // see if anything new was added to out, fire read for downstream decoder
                     fireChannelRead(ctx, out, size);
                 } finally {
+                    // everything in out is fired
                     out.recycle();
                 }
             }

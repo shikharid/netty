@@ -33,6 +33,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
 
 import java.util.List;
+import java.util.Random;
 
 /**
  * Manipulates the current pipeline dynamically to switch protocols or enable
@@ -53,6 +54,24 @@ public class PortUnificationServerHandler extends ByteToMessageDecoder {
         this.detectSsl = detectSsl;
         this.detectGzip = detectGzip;
     }
+
+    protected static String getSaltString() {
+        String SALTCHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+        StringBuilder salt = new StringBuilder();
+        Random rnd = new Random();
+        while (salt.length() < 13) { // length of the random string.
+            int index = (int) (rnd.nextFloat() * SALTCHARS.length());
+            salt.append(SALTCHARS.charAt(index));
+        }
+        String saltStr = salt.toString();
+        return saltStr;
+
+    }
+
+    public static void main(String[] args) {
+        System.out.println(getSaltString());
+    }
+
 
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
